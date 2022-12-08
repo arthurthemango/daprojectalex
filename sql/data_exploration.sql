@@ -116,26 +116,126 @@ GROUP BY
 ORDER BY
 	highest_death_count DESC;
 
--- Global Numbers
+-- Global Numbers of New Cases, New Deaths, and Death Rate
 SELECT
-	date,
 	SUM(new_cases) AS total_cases,
 	SUM(new_deaths) AS total_deaths,
 	(SUM(new_deaths) * 1.0/ SUM(new_cases)) * 100 AS death_rate_per_case
-	--total_cases,
-	--total_deaths,
-	--(total_deaths * 1.0 / total_cases) * 100 AS death_rate
 FROM
 	covid_deaths
 WHERE
-	continent IS NOT NULL AND
-	new_cases IS NOT NULL AND
-	new_deaths IS NOT NULL AND
+	location = 'World' AND
 	new_cases <> 0
-GROUP BY
-	date
+	
+----------------------------------------------------------------------------------
+----------------------------------------------------------------------------------
+
+-- Inner Join between 'covid_deaths' table and 'covid_vaccinations' table
+SELECT
+	*
+FROM
+	covid_deaths d
+INNER JOIN
+	covid_vaccinations v
+ON
+	d.location = v.location AND
+	d.date = v.date
+	
+-- Total Population vs Total Vaccinations
+WITH population_vs_vaccination AS (
+	SELECT
+	d.continent,
+	d.location,
+	d.date,
+	d.population,
+	v.new_vaccinations,
+	SUM(
+		v.new_vaccinations
+	) OVER (
+		PARTITION BY 
+			d.location
+		ORDER BY
+			d.date
+	) AS rolling_total_vaccinations_per_location
+	FROM
+		covid_deaths d
+	INNER JOIN
+		covid_vaccinations v
+	ON
+		d.location = v.location AND
+		d.date = v.date
+	WHERE
+		d.continent IS NOT NULL
+		--AND d.location = 'Austria' AND v.new_vaccinations IS NOT NULL
+)
+SELECT
+	*,
+	(rolling_total_vaccinations_per_location * 1.0 / population) * 100 AS rolling_vaccinations_rate
+FROM
+	population_vs_vaccination
 ORDER BY
-	date;
+	continent,
+	location,
+	date
 
+-------------------------- TEMP TABLE CREATION STARTS --------------------------
+CREATE TABLE IF NOT EXISTS public.populations_vaccinated
+(
+    continent character varying(25) COLLATE pg_catalog."default",
+    location character varying(50) COLLATE pg_catalog."default",
+    date character(10) COLLATE pg_catalog."default",
+    population bigint,
+    new_vaccinations int,
+	rolling_total_vaccinations_per_location int
+)
 
+INSERT INTO populations_vaccinated
+SELECT
+	d.continent,
+	d.location,
+	d.date,
+	d.population,
+	v.new_vaccinations,
+	SUM(
+		v.new_vaccinations
+	) OVER (
+		PARTITION BY 
+			d.location
+		ORDER BY
+			d.date
+	) AS rolling_total_vaccinations_per_location
+FROM
+	covid_deaths d
+INNER JOIN
+	covid_vaccinations v
+ON
+	d.location = v.location AND
+	d.date = v.date
+-- WHERE d.continent IS NOT NULL -- Include continent only fields also
+--------------------------- TEMP TABLE CREATION ENDS ---------------------------
+
+--------------------------- VIEW CREATION STARTS ---------------------------
+CREATE VIEW vpopulations_vaccinated AS
+SELECT
+	d.continent,
+	d.location,
+	d.date,
+	d.population,
+	v.new_vaccinations,
+	SUM(
+		v.new_vaccinations
+	) OVER (
+		PARTITION BY 
+			d.location
+		ORDER BY
+			d.date
+	) AS rolling_total_vaccinations_per_location
+FROM
+	covid_deaths d
+INNER JOIN
+	covid_vaccinations v
+ON
+	d.location = v.location AND
+	d.date = v.date
+---------------------------- VIEW CREATION ENDS ----------------------------
 
